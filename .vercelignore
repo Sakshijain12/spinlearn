@@ -1,0 +1,9 @@
+.env*
+!.env.example
+.data
+*.sqlite
+*.sqlite-*
+spinlearn-backup-*.json
+test-results
+playwright-report
+coverage

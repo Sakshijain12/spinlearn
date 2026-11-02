@@ -1,0 +1,56 @@
+{
+  "name": "spinlearn",
+  "version": "1.0.0",
+  "description": "A daily AI-concept learning platform built around a 'spin to find today's topic' mechanic",
+  "private": true,
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "vitest run",
+    "test:ui": "playwright test",
+    "type-check": "tsc --noEmit",
+    "db:migrate": "node scripts/migrate-db.mjs",
+    "db:check": "node scripts/check-db.mjs",
+    "db:import-sqlite": "node scripts/import-sqlite.mjs"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.2.0",
+    "@fontsource/inter": "^5.2.0",
+    "@fontsource/jetbrains-mono": "^5.2.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "next": "^15.0.0",
+    "typescript": "^5.3.3",
+    "@types/node": "^24.0.0",
+    "@types/react": "^18.2.46",
+    "@types/react-dom": "^18.2.18",
+    "tailwindcss": "^3.4.1",
+    "autoprefixer": "^10.4.17",
+    "postcss": "^8.4.32",
+    "zod": "^3.22.4",
+    "framer-motion": "^10.16.16",
+    "katex": "^0.16.9",
+    "react-katex": "^3.1.0",
+    "shiki": "^0.14.4",
+    "axios": "^1.6.5",
+    "next-auth": "^4.24.7",
+    "jose": "^5.1.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.14",
+    "@typescript-eslint/eslint-plugin": "^6.17.0",
+    "@typescript-eslint/parser": "^6.17.0",
+    "eslint": "^8.56.0",
+    "eslint-config-next": "^15.0.0",
+    "vitest": "^3.2.4",
+    "@testing-library/react": "^14.1.2",
+    "@testing-library/jest-dom": "^6.1.5",
+    "playwright": "^1.40.1",
+    "@testing-library/dom": "^9.3.4"
+  }
+}

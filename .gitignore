@@ -1,0 +1,16 @@
+node_modules
+.next
+dist
+build
+*.log
+.DS_Store
+.env*
+!.env.example
+coverage
+.vercel
+test-results
+playwright-report
+.data
+*.sqlite
+*.sqlite-*
+spinlearn-backup-*.json
