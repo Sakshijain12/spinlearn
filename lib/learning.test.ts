@@ -38,6 +38,7 @@ describe("local learning state", () => {
         const restored = learningStateSchema.parse(state);
         expect(restored.progress["red-teaming"]).toEqual({
           ...legacyProgress, completedSteps: [], quizQuestionIds: [], quickCheck: { answers: [], score: null },
+          quizAttemptId: null, completedAttemptId: null,
         });
         expect(restored.activity).toEqual(state.activity);
         expect(restored.bookmarks).toEqual(state.bookmarks);

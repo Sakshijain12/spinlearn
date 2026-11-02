@@ -1,16 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { expect, test } from "playwright/test";
 import { initialLearningState, STORAGE_KEY } from "../lib/learning";
-import { accountStorageKey, LEGACY_OWNER_KEY } from "../lib/account-storage";
+import { accountStorageKey } from "../lib/account-storage";
 import { authResponseSchema } from "../lib/auth/validation";
 
-test("Login again opens a real password form, account creation retains preview progress, and bad credentials are rejected", async ({ page, context }) => {
+test("Login again opens a real password form, server progress persists, and bad credentials are rejected", async ({ page, context, baseURL }) => {
   const loginId = `learner-${randomBytes(8).toString("hex")}`;
   const password = randomBytes(24).toString("base64url");
-  const legacy = { ...initialLearningState(), previewEnded: true, bookmarks: ["lora"] };
-  await page.addInitScript(({ key, state }) => {
-    if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify(state));
-  }, { key: STORAGE_KEY, state: legacy });
   await page.goto("/signed-out");
   await page.getByRole("link", { name: "Login again", exact: true }).click();
   await expect(page).toHaveURL(/\/login$/);
@@ -30,15 +26,17 @@ test("Login again opens a real password form, account creation retains preview p
   await expect(page.getByRole("heading", { name: "What will you learn today?", exact: true })).toBeVisible();
   const { account } = authResponseSchema.parse(await (await page.request.get("/api/auth/session")).json());
   await expect(page.getByRole("button", { name: "Open profile menu", exact: true })).toBeEnabled();
-  const local = await page.evaluate(({ key, owner }) => ({
-    state: JSON.parse(localStorage.getItem(key)!),
-    owner: localStorage.getItem(owner),
+  const local = await page.evaluate((key) => ({
+    state: localStorage.getItem(key),
     browserData: JSON.stringify(Object.values(localStorage)),
-  }), { key: accountStorageKey(account.id), owner: LEGACY_OWNER_KEY });
-  expect(local.state.bookmarks).toEqual(["lora"]);
-  expect(local.state.previewEnded).toBe(false);
-  expect(local.owner).toBe(account.id);
+  }), accountStorageKey(account.id));
+  expect(local.state).toBeNull();
   expect(local.browserData).not.toContain(password);
+  const saved = await page.request.post("/api/v1/learning", {
+    headers: { Origin: new URL(baseURL!).origin },
+    data: { accountId: account.id, requestId: crypto.randomUUID(), action: { type: "bookmark", slug: "lora", saved: true } },
+  });
+  expect(saved.status()).toBe(200);
   const sessionCookie = (await context.cookies()).find((cookie) => cookie.name === "spinlearn_session");
   expect(sessionCookie?.httpOnly).toBe(true);
   expect(sessionCookie?.sameSite).toBe("Lax");
@@ -74,6 +72,8 @@ test("two accounts never share local profile, bookmarks, or progress", async ({ 
   const first = await register(firstLogin, "First learner");
   await page.goto("/library?q=LoRA");
   await page.getByRole("button", { name: "Save LoRA", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Unsave LoRA", exact: true })).toBeVisible();
+  const firstProgress = (await (await page.request.get("/api/v1/learning")).json()).state;
   await page.getByRole("button", { name: "Open profile menu", exact: true }).click();
   await page.getByRole("menuitem", { name: "Sign out", exact: true }).click();
   await expect(page.getByRole("heading", { name: "You're signed out", exact: true })).toBeVisible();
@@ -82,26 +82,25 @@ test("two accounts never share local profile, bookmarks, or progress", async ({ 
   await expect(page.getByRole("heading", { name: "Make room for your next idea", exact: true })).toBeVisible();
   await page.goto("/settings");
   await expect(page.getByLabel("Display name", { exact: true })).toHaveValue("Second learner");
-  const scopes = await page.evaluate(({ firstKey, secondKey }) => ({
-    first: JSON.parse(localStorage.getItem(firstKey)!),
-    second: JSON.parse(localStorage.getItem(secondKey)!),
-  }), { firstKey: accountStorageKey(first.id), secondKey: accountStorageKey(second.id) });
-  expect(scopes.first.bookmarks).toEqual(["lora"]);
-  expect(scopes.second.bookmarks).toEqual([]);
+  expect(first.id).not.toBe(second.id);
+  const secondProgress = (await (await page.request.get("/api/v1/learning")).json()).state;
+  expect(firstProgress.bookmarks).toEqual(["lora"]);
+  expect(secondProgress.bookmarks).toEqual([]);
 });
 
 test("protected pages and APIs reject missing or revoked sessions, including forged local preview flags", async ({ page, request, baseURL, playwright }) => {
-  for (const route of ["/", "/settings", "/progress", "/lesson/kv-cache"]) {
+  for (const route of ["/settings", "/progress"]) {
     await page.goto(route);
-    await expect(page).toHaveURL(/\/login$/);
+    await expect(page).toHaveURL(/\/login\?next=/);
   }
-  for (const route of ["/api/v1/topics", "/api/v1/lessons/kv-cache", "/api/auth/session"]) {
+  for (const route of ["/api/v1/learning", "/api/auth/session"]) {
     expect((await request.get(route)).status()).toBe(401);
   }
-  expect((await request.post("/api/v1/spin", { data: {} })).status()).toBe(401);
+  expect((await request.post("/api/v1/spin", { data: {} })).status()).toBe(201);
+  expect((await request.get("/api/v1/lessons/kv-cache")).status()).toBe(200);
   await page.evaluate(({ key, value }) => localStorage.setItem(key, value), { key: STORAGE_KEY, value: JSON.stringify(initialLearningState()) });
   await page.goto("/settings");
-  await expect(page).toHaveURL(/\/login$/);
+  await expect(page).toHaveURL(/\/login\?next=/);
 
   const password = randomBytes(24).toString("base64url");
   const created = await request.post("/api/auth/register", {
@@ -115,7 +114,8 @@ test("protected pages and APIs reject missing or revoked sessions, including for
     expect((await stale.get("/api/auth/session")).status()).toBe(200);
     expect((await request.post("/api/auth/logout", { headers: { Origin: new URL(baseURL!).origin } })).status()).toBe(200);
     expect((await stale.get("/api/auth/session")).status()).toBe(401);
-    expect((await stale.get("/api/v1/lessons/kv-cache")).status()).toBe(401);
+    expect((await stale.get("/api/v1/learning")).status()).toBe(401);
+    expect((await stale.get("/api/v1/lessons/kv-cache")).status()).toBe(200);
   } finally {
     await stale.dispose();
   }

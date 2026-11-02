@@ -1,14 +1,11 @@
 import { NextResponse } from 'next/server';
 import { getGlossary, getLesson } from '@/lib/lessons';
-import { apiAuthError } from '@/lib/auth/session';
 
 export async function GET(
   _request: unknown,
   { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
-    const unauthorized = await apiAuthError();
-    if (unauthorized) return unauthorized;
     const { slug } = await params;
     const lesson = getLesson(slug);
     if (!lesson) {

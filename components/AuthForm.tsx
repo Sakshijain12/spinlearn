@@ -6,10 +6,12 @@ import { z } from "zod";
 import { Icon } from "./Icon";
 import { authResponseSchema, loginSchema, registrationSchema } from "@/lib/auth/validation";
 import { broadcastAccountChange } from "@/lib/account-storage";
+import { SiteFooter } from "./SiteFooter";
+import { safeReturnPath } from "@/lib/site";
 
 const errorSchema = z.object({ error: z.object({ message: z.string() }) });
 
-export function AuthForm({ mode }: { mode: "login" | "register" }) {
+export function AuthForm({ mode, returnTo = "/" }: { mode: "login" | "register"; returnTo?: string }) {
   const registering = mode === "register";
   const [loginId, setLoginId] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -45,7 +47,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       setPassword("");
       setConfirmPassword("");
       broadcastAccountChange("login");
-      window.location.assign("/");
+      window.location.assign(safeReturnPath(returnTo));
     } catch (cause) {
       console.error("Spinlearn could not complete the account request.", cause);
       setError("Could not reach the account service. Check your connection and try again.");
@@ -88,11 +90,13 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
           </form>
           <p className="mt-5 text-center text-small text-text-secondary">
             {registering ? "Already have an account? " : "New to Spinlearn? "}
-            <Link href={registering ? "/login" : "/register"} className="text-link">{registering ? "Log in" : "Create account"}</Link>
+            <Link href={`${registering ? "/login" : "/register"}?next=${encodeURIComponent(safeReturnPath(returnTo))}`} className="text-link">{registering ? "Log in" : "Create account"}</Link>
           </p>
-          <p className="mt-5 border-t border-border pt-4 text-caption text-text-secondary">Accounts are stored on this app&apos;s server. Learning progress stays in this browser, separately for each account.{registering ? " Existing preview progress is kept for the first account used here." : ""}</p>
+          <p className="mt-5 border-t border-border pt-4 text-caption text-text-secondary">Login is only needed to save and view personal progress. Your signed-in learning data is stored in Neon PostgreSQL and available across devices. <Link href="/" className="text-link">Continue without logging in</Link></p>
+          {registering && <p className="mt-3 text-caption text-text-secondary">By creating an account, you agree to the <Link href="/declaration" className="underline">declaration and terms</Link> and acknowledge the <Link href="/privacy" className="underline">privacy policy</Link>.</p>}
         </section>
       </main>
+      <SiteFooter />
     </div>
   );
 }

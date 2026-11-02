@@ -1,13 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { topicsListRequestSchema } from '@/lib/schemas/validation';
 import { SAMPLE_TOPICS } from '@/lib/data';
-import { apiAuthError } from '@/lib/auth/session';
 import { ZodError } from 'zod';
 
 export async function GET(request: NextRequest) {
   try {
-    const unauthorized = await apiAuthError();
-    if (unauthorized) return unauthorized;
     const searchParams = request.nextUrl.searchParams;
     
     const params = {

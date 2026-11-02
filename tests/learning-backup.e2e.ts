@@ -1,7 +1,6 @@
 import { expect, test } from "./fixtures";
 import { createLearningBackup } from "../lib/learning-backup";
 import { initialLearningState, initialLessonProgress } from "../lib/learning";
-import { accountStorageKey } from "../lib/account-storage";
 
 test("deployment backup import confirms replacement, preserves account boundaries, and exports valid data", async ({ page, account }) => {
   await page.goto("/settings");
@@ -22,7 +21,7 @@ test("deployment backup import confirms replacement, preserves account boundarie
   await expect(page.getByLabel("Display name", { exact: true })).toHaveValue("Imported learner");
   await page.reload();
   await expect(page.getByLabel("Display name", { exact: true })).toHaveValue("Imported learner");
-  const stored = await page.evaluate((key) => JSON.parse(localStorage.getItem(key)!), accountStorageKey(account.id));
+  const stored = (await (await page.request.get("/api/v1/learning")).json()).state;
   expect(stored).toEqual(imported);
   const downloadEvent = page.waitForEvent("download");
   await page.getByRole("button", { name: "Download learning backup", exact: true }).click();

@@ -2,6 +2,10 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Icon } from "@/components/Icon";
 import { currentAccount } from "@/lib/auth/session";
+import { SiteFooter } from "@/components/SiteFooter";
+import { PRIVATE_ROBOTS } from "@/lib/site";
+
+export const metadata = { title: "Signed out", robots: PRIVATE_ROBOTS };
 
 export default async function SignedOutPage() {
   if (await currentAccount()) redirect("/");
@@ -12,11 +16,12 @@ export default async function SignedOutPage() {
           <Icon name="brain" size={32} className="mx-auto mb-5 text-accent-text" />
           <p className="section-label">Spinlearn</p>
           <h1 id="signed-out-title" className="text-title font-medium tracking-tight">You&apos;re signed out</h1>
-          <p className="mt-4 text-small text-text-secondary">Your profile, saved topics, and learning progress are still saved. Log in to your account to continue.</p>
+          <p className="mt-4 text-small text-text-secondary">Your account progress is saved on the server. You can continue learning without logging in, or log in again to track your progress.</p>
           <Link href="/login" className="btn-primary mt-6">Login again<Icon name="right" size={16} /></Link>
-          <p className="mt-5 text-caption text-text-secondary">First time using accounts? Create one from the login screen. Your existing preview progress will be kept for the first account used in this browser.</p>
+          <Link href="/" className="text-link mt-5 block">Continue learning without logging in</Link>
         </section>
       </main>
+      <SiteFooter />
     </div>
   );
 }

@@ -19,9 +19,24 @@ npm run db:check
 npm run dev
 ```
 
-Open http://localhost:3000. Create an account on your first visit, then use its login ID and password. There are no default or hardcoded credentials.
+Open http://localhost:3000 and start learning without an account. Log in only to save bookmarks/progress or open personal Progress and Settings. There are no default or hardcoded credentials.
 
 The legacy peer-dependency option accommodates the project's existing React/testing-library dependency versions. Do not use an automatic force-upgrade to resolve dependency advisories without testing the resulting changes.
+
+## Updating the existing live site
+
+The public-learning/server-progress release adds one table, `spinlearn_auth.learning_state`, without deleting or rewriting accounts or sessions.
+
+1. **Before publishing the new code**, run `npm run db:migrate` and `npm run db:check` with the existing production Neon `DATABASE_URL` configured privately. These commands create the missing table and verify access. Do not run `db:import-sqlite` again against the already populated production database.
+2. In Vercel Production environment variables, set `SITE_URL=https://spinlearn-rosy.vercel.app` (or your future canonical custom domain). Keep the existing secret `DATABASE_URL` and origin configuration.
+3. Publish/merge the tested code and let Vercel deploy it. A preview deployment should use a separate Neon branch with the same migration.
+4. Visit the homepage, Library, a lesson, `/privacy`, and `/declaration` while signed out. They must load without a login redirect. `/progress` and `/settings` should request login.
+5. Sign in from the browser that has your old progress. If your server record is empty, choose **Upload browser progress**. This explicitly transfers your existing account's browser data to Neon. The previous browser copy stays intact. If server progress already exists, it is not overwritten automatically; a confirmed backup import in Settings is available when replacement is really intended.
+6. Log in in a different browser/device and confirm that the same lessons, bookmarks, quiz results, and history appear.
+7. Review the public policy wording for your audience and applicable law. The published operator/contact are **Sakshi** and **spinlearn025@gmail.com**; privacy/declaration text is not a legal-compliance certification.
+8. Add a URL-prefix property for the site in Google Search Console. For HTML-tag verification, set the token as `GOOGLE_SITE_VERIFICATION` in Vercel and redeploy. Submit `https://spinlearn-rosy.vercel.app/sitemap.xml`. Search engines control indexing and ranking; SEO metadata does not guarantee either.
+
+If the migration has not been run, signed-in progress calls show an explicit save/load error rather than falling back to browser-only storage. Public guest lessons remain available.
 
 ## Deploy to Vercel + Neon
 
@@ -33,7 +48,7 @@ The legacy peer-dependency option accommodates the project's existing React/test
 4. Put the string in your local `.env.local` as `DATABASE_URL`. Set `APP_URL=http://localhost:3000` for local development.
 5. Run `npm run db:migrate`, then `npm run db:check`.
 
-Schema setup creates the `spinlearn_auth` schema and its accounts, sessions, and rate-limit tables in a transaction. It is safe to run again without deleting existing records. Schema setup is intentionally **not run at every request or build**. The production build works without database credentials.
+Schema setup creates the `spinlearn_auth` schema and its accounts, sessions, rate-limit, and learning-state tables in a transaction. It is safe to run again without deleting existing records. Schema setup is intentionally **not run at every request or build**. The production build works without database credentials.
 
 ### 2. Optional: keep accounts you created locally
 
@@ -49,16 +64,16 @@ The target account table must be empty. A populated target or any failed row cau
 
 If you do not need earlier accounts, skip this step and register a new account after setup.
 
-### 3. Optional: carry learning progress to the new domain
+### 3. Optional: carry earlier browser-only progress to the server
 
 Browser storage is scoped to its site origin: `localhost` and `your-app.vercel.app` do not share it.
 
-1. After importing accounts, start the app locally against Neon and log in with the original account.
-2. Open **Settings -> Move your learning data -> Download learning backup**.
-3. After deploying, log in to that same account on the new site.
-4. Choose **Import learning backup** and confirm replacement.
+1. After importing accounts, start the app against Neon and sign in in the browser/site origin that holds the original progress.
+2. If offered, choose **Upload browser progress**. It is imported only into an empty server learning record.
+3. Alternatively, use an earlier backup through **Settings -> Your data and backups -> Import learning backup** and confirm replacement.
+4. Sign in to the same account on another device or origin: it now loads the server copy.
 
-The backup contains profile preferences, bookmarks, spins, quiz/practice state, and learning history, **not passwords or sessions**. Import is allowed only for the same account UUID. This is why importing old accounts before creating replacements matters. The old browser data is not deleted automatically. Treat backup JSON as private.
+The backup contains profile preferences, bookmarks, spins, quiz/practice state, and learning history, **not passwords or sessions**. Import is allowed only for the same account UUID and replaces that account's server record, with a stale-revision check to avoid overwriting newer changes. This is why retaining account IDs matters. Old browser data is not deleted automatically. Treat backup JSON as private.
 
 ### 4. Put the app in your own GitHub repository
 
@@ -90,6 +105,8 @@ Use **Node.js 24.x**. [vercel.json](vercel.json) configures:
 | `APP_URL` | Production, if using a custom/canonical domain | The exact origin, e.g. `https://learn.example.com`, without a path |
 | `DATABASE_URL` | Preview, only if enabling preview logins | A separate disposable Neon branch/database |
 | `APP_URL` | Local development | `http://localhost:3000` |
+| `SITE_URL` | Production | `https://spinlearn-rosy.vercel.app` or the canonical custom HTTPS origin |
+| `GOOGLE_SITE_VERIFICATION` | Production, optional | The public HTML-tag verification token from Google Search Console |
 
 For Vercel's generated URLs, `APP_URL` can be omitted if **Automatically expose System Environment Variables** is enabled. The app accepts only its exact `VERCEL_URL`, branch URL, and production domain supplied by Vercel. It does **not** trust every `*.vercel.app` site or arbitrary forwarded headers.
 
@@ -110,11 +127,11 @@ The repository changes do not create Neon/Vercel accounts, set remote secrets, o
 
 ## Interface
 
-- **Today:** server-selected topic, 3.4-second reel, reduced-motion support, one local re-spin per day, bookmarks, and real local metrics.
+- **Today:** public topic selection, 3.4-second reel, reduced-motion support, expanded two-sentence cards, and account-backed metrics. Signed-in users have one server-enforced re-spin per local day; guests have two picks for the current visit and can always browse the Library.
 - **Library:** 42 complete AI lessons across seven areas, responsive cards, search, URL-synced category/level/status/saved filters, sorting, and 20-topic pagination. Client-side filter updates use the browser history API without navigation requests, so a stale search cannot restore cleared filters.
 - **Lessons:** five clickable steps, persistent step progress, interactive KV-cache and attention demonstrations, KaTeX formulas, syntax-colored code, copying, a downloadable handover example, quizzes, glossary explanations, and completion/review states.
 - **Progress:** an 84-day activity calendar, streaks, recent completions, quiz accuracy, and mastery by category.
-- **Settings:** saved display name/timezone, explicit local-storage information, disabled/unconnected email reminders, and a confirmation dialog for resetting local data.
+- **Settings:** server-saved display name/timezone, private backup export/import, disabled/unconnected email reminders, and confirmed server learning-data reset.
 - Shared desktop/mobile navigation, self-hosted Inter/JetBrains Mono fonts, keyboard focus states, empty states, and error/not-found screens.
 - **Profile menu:** hover over or click the avatar for **View profile** and **Sign out**. Keyboard users can open it with Enter, Space, or arrow keys, move between actions, and close it with Escape or by moving focus away. **View profile** opens the profile form in Settings.
 
@@ -136,19 +153,21 @@ All **42 catalogue topics** have original five-step lessons: Concept, Intuition,
 
 Every topic is eligible for the spinner under its category/level filters. **LLMs + Advanced** now includes KV cache, Transformer architecture, and Mixture of experts. Re-spins exclude the previous topic when alternatives exist. A genuinely single-topic selection is identified explicitly; choose **All** for more variety.
 
-Existing local progress, bookmarks, and today's selected topic are preserved. The existing daily re-spin limit has not changed; the Library always allows direct access to every lesson.
+The Library and every lesson are public. Login is needed for personal progress, account settings, and saved bookmarks. Guest lesson interactions stay in memory for the current visit; they are not silently attached to a later account.
 
 Content lives in [lib/content](lib/content), grouped by subject. [lib/data.ts](lib/data.ts) owns the catalogue metadata, and [lib/lessons.ts](lib/lessons.ts) validates and assembles each lesson. Lesson pages load only the selected lesson and glossary from the server rather than bundling the whole course into the browser. Examples are deliberately small teaching programs, not claims to implement full production model training.
 
-Bookmarks, profile settings, spins, lesson progress, and completed quiz results are stored under `spinlearn.learning.v1:<account-id>` in this browser's local storage. Data survives reloads and is synchronized between tabs, but not between devices. Invalid or unavailable storage is reported visibly rather than silently discarded. This is account separation in the UI, not encryption against someone with access to this browser or device.
+Bookmarks, profile preferences, spins, lesson progress, practice state, quiz results, and completion history are stored per account in Neon PostgreSQL. Personal snapshots are loaded after login, refreshed on tab return/reload, and refreshed between same-origin tabs using BroadcastChannel. No signed-in progress is newly persisted in localStorage. Server failures are visible and disable further saves until a successful sync; they do not produce success-shaped local fallbacks.
 
-The first account used in this browser claims the old preview record once, retaining its profile, bookmarks, and progress. Later accounts start with separate empty records and cannot import that preview. The original preview record is retained as a backup; resetting an account does not re-import it.
+The old `spinlearn.learning.v1:<account-id>` record is read only for an explicit, one-time migration into an empty account record. Existing server progress wins over an older browser copy. Resetting progress preserves the account/profile and does not offer the old browser copy again automatically. Backups remain available for intentional replacement.
 
 **Sign out** revokes the server session and clears its cookie without deleting learning data. The signed-out screen offers **Login again**, which opens `/login` with login ID and password fields. `/register` creates accounts with a display name, case-insensitive login ID, and a password of at least 12 characters. Password fields support password managers and an explicit show/hide control.
 
-Credentials are salted and hashed using scrypt, never saved as plaintext or put in browser storage. Seven-day random sessions are stored as hashes in Neon PostgreSQL and sent in `HttpOnly`, `SameSite=Lax` cookies (`Secure` in production). Login/account endpoints check trusted deployment origins and enforce shared database-backed attempt limits. App pages and lesson APIs require a valid server session; changing an old local preview flag cannot log someone in. Account changes synchronize across open tabs.
+Credentials are salted and hashed using scrypt, never saved as plaintext or put in browser storage. Seven-day random sessions are stored as hashes in Neon PostgreSQL and sent in `HttpOnly`, `SameSite=Lax` cookies (`Secure` in production). Login/account endpoints check trusted deployment origins and enforce shared database-backed attempt limits. Personal Progress/Settings and the learning-state API require a valid session; public content APIs do not. Changing a local preview flag cannot grant access to personal server data.
 
 The web app does not create tables or write database files in serverless storage. Account creation with session issuance, session rotation, and rate-limit increments are atomic PostgreSQL statements. The Neon HTTP driver needs no process-local connection pool. Schema creation and the optional legacy SQLite import are separate operator commands.
+
+Learning updates are validated commands rather than arbitrary client snapshots, except for explicit imports. The server verifies the acting account, calculates quiz scores, enforces completion and re-spin rules, and uses compare-and-swap revisions to reapply concurrent updates. Recent request IDs prevent replaying a successful write, while quiz attempt IDs prevent recording the same completion twice. Reset/restore require the current revision. Imported historical scores are retained as prior data, not presented as newly verified assessment results.
 
 Section completion is stored separately from visit history. **Complete & next** confirms a reading section; tabs and Back only navigate. Quiz is complete only after **every answer is correct** in a checked full attempt. Retrying clears the Quiz confirmation until another perfect attempt. The current section is outlined, and only confirmed sections have filled bars and checkmarks. Library `n/5` counts confirmations, not visits.
 
@@ -164,7 +183,16 @@ Older saved data without section confirmations starts with no sections checked; 
 
 Statistics start at zero. A new lesson completion is counted after confirming all four reading sections, correctly answering every quiz question, and choosing **Mark as learned**. Existing completion history is preserved. Mastery requires a latest score of at least 80%. Activity counts unique topics completed on each local date. Quiz accuracy covers completed lessons over the last 30 local dates. Visible lesson time is recorded on completion and capped at 30 minutes per topic/day.
 
-The daily re-spin limit is enforced in the local interface only. Server-side learning-data sync/quota enforcement, email delivery, password recovery, email verification, and AI lesson generation are **not connected**.
+Email delivery, password recovery, email verification, and live AI lesson generation are **not connected**. Account-deletion requests go to the operator's published contact; the Settings reset only removes learning history/bookmarks/spins, not the login account.
+
+## Privacy, declaration, and SEO
+
+- Public `/privacy` explains guest behavior, essential sessions, Neon account/progress storage, platform logs, old browser migration, exports, reset, retention, and contact requests.
+- Public `/declaration` covers educational limitations, AI-assisted content, acceptable use, third-party references, availability, and non-excludable rights. The operator should obtain legal review appropriate to the intended audience.
+- Public routes have individual titles/descriptions, canonical URLs, Open Graph/Twitter metadata, and a generated sharing image.
+- Lesson Concept content renders in server HTML without JavaScript, and each lesson has LearningResource JSON-LD.
+- `/sitemap.xml` lists all 42 lessons and public landing/legal pages. `/robots.txt` excludes APIs and account pages. Login, registration, progress, settings, and signed-out pages have noindex metadata.
+- Preview deployments are marked noindex and disallowed in robots. Set `SITE_URL` when changing the canonical production domain.
 
 ## Styling
 
@@ -182,7 +210,9 @@ Fonts are self-hosted; the UI does not fetch fonts from an external CDN.
 | `POST /api/auth/login` | Verifies the login ID/password and rotates the current session. |
 | `POST /api/auth/logout` | Revokes the current session and clears its cookie. |
 | `GET /api/auth/session` | Returns the signed-in account, or 401. |
-| `POST /api/v1/spin` | Accepts category, level, re-spin flag, and optional excluded slug. Returns the chosen topic and a validated 42-row reel with the choice at index 40. |
+| `GET /api/v1/learning` | Private, no-store account snapshot and revision; requires login. |
+| `POST /api/v1/learning` | Authenticated same-origin commands for profile/bookmarks/steps/quizzes/completion/spins/import/reset, with validated input and revision protection. |
+| `POST /api/v1/spin` | Public selection endpoint. Returns a chosen topic and validated 42-row reel; signed-in selection is saved and quota-checked through the learning-state endpoint. |
 | `GET /api/v1/topics` | Lists catalogue topics with search, category/level filtering, sorting, and pagination. User-specific filters are applied in the local UI. |
 | `GET /api/v1/lessons/[slug]` | Returns the requested complete lesson and its glossary for all 42 topics. An unknown topic returns `404 NOT_FOUND`. |
 

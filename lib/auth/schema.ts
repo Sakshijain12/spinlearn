@@ -18,4 +18,11 @@ export const AUTH_SCHEMA_STATEMENTS = [
     started_at BIGINT NOT NULL,
     attempts INTEGER NOT NULL CHECK (attempts > 0)
   )`,
+  `CREATE TABLE IF NOT EXISTS spinlearn_auth.learning_state (
+    account_id UUID PRIMARY KEY REFERENCES spinlearn_auth.accounts(id) ON DELETE CASCADE,
+    payload JSONB NOT NULL CHECK (jsonb_typeof(payload) = 'object'),
+    revision INTEGER NOT NULL CHECK (revision > 0),
+    mutation_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+    updated_at BIGINT NOT NULL
+  )`,
 ];

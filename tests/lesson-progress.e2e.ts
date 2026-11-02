@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "./fixtures";
 import { accountStorageKey } from "../lib/account-storage";
-import { initialLearningState, STORAGE_KEY } from "../lib/learning";
+import { initialLearningState } from "../lib/learning";
 
 function steps(page: Page) {
   return page.getByRole("navigation", { name: "Lesson steps", exact: true }).getByRole("button");
@@ -59,8 +59,9 @@ test("legacy visits and scores are retained but do not become section confirmati
   };
   await page.addInitScript(({ key, state }) => {
     if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify(state));
-  }, { key: STORAGE_KEY, state: legacy });
+  }, { key: accountStorageKey(account.id), state: legacy });
   await page.goto("/lesson/red-teaming");
+  await page.getByRole("button", { name: "Upload browser progress", exact: true }).click();
   await expect(steps(page).nth(2)).toHaveAttribute("aria-current", "step");
   for (let index = 0; index < 5; index += 1) await expectStep(page, index, false);
   await expect(page.getByText("Your earlier lesson result is saved in Progress. Section confirmations are tracked separately.", { exact: true })).toBeVisible();
@@ -69,11 +70,7 @@ test("legacy visits and scores are retained but do not become section confirmati
   await page.reload();
   await expectStep(page, 2, true);
   await expectStep(page, 4, false);
-  const stored = await page.evaluate((key) => {
-    const raw = localStorage.getItem(key);
-    if (!raw) throw new Error("Expected saved learning data");
-    return JSON.parse(raw).progress["red-teaming"];
-  }, accountStorageKey(account.id));
+  const stored = (await (await page.request.get("/api/v1/learning")).json()).state.progress["red-teaming"];
   expect(stored).toMatchObject({
     completedSteps: [2], visited: [0, 1, 2, 3, 4], score: 1 / 3, answers: [0, 0, 0], completedAt,
   });

@@ -3,12 +3,9 @@ import { spinRequestSchema } from '@/lib/schemas/validation';
 import { generateId, sampleTopicPool, getTodayDate } from '@/lib/utils';
 import { PUBLISHED_TOPICS } from '@/lib/lessons';
 import { ZodError } from 'zod';
-import { apiAuthError } from '@/lib/auth/session';
 
 export async function POST(request: NextRequest) {
   try {
-    const unauthorized = await apiAuthError();
-    if (unauthorized) return unauthorized;
     const body = await request.json();
     
     // Validate request

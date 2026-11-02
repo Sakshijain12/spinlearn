@@ -80,11 +80,11 @@ test("spins land in the center, persist, and respect the local re-spin limit", a
 
 test("library filters survive reload and empty selections recover", async ({ page }) => {
   await page.goto("/library");
-  await page.getByRole("searchbox", { name: "Search topics", exact: true }).fill("attention");
-  await expect(page).toHaveURL(/q=attention/);
+  await page.getByRole("searchbox", { name: "Search topics", exact: true }).fill("mixture");
+  await expect(page).toHaveURL(/q=mixture/);
   await page.reload();
-  await expect(page.getByRole("searchbox", { name: "Search topics", exact: true })).toHaveValue("attention");
-  await expect(page.locator("article")).toHaveCount(SAMPLE_TOPICS.filter((topic) => `${topic.name} ${topic.definition}`.toLowerCase().includes("attention")).length);
+  await expect(page.getByRole("searchbox", { name: "Search topics", exact: true })).toHaveValue("mixture");
+  await expect(page.locator("article")).toHaveCount(SAMPLE_TOPICS.filter((topic) => `${topic.name} ${topic.definition}`.toLowerCase().includes("mixture")).length);
   await page.getByLabel("Level", { exact: true }).selectOption("Beginner");
   await expect(page.getByRole("heading", { name: "Try a little broader curiosity" })).toBeVisible();
   await page.getByRole("button", { name: "Browse all topics", exact: true }).click();
@@ -146,18 +146,18 @@ test("settings persist and resetting requires confirmation", async ({ page }) =>
   await page.getByLabel("Display name", { exact: true }).fill("Taylor Lee");
   await page.getByLabel("Timezone", { exact: true }).selectOption("Asia/Tokyo");
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
-  await expect(page.getByRole("status").filter({ hasText: "Settings saved" })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Profile saved to your account" })).toBeVisible();
   await page.reload();
   await expect(page.getByLabel("Display name", { exact: true })).toHaveValue("Taylor Lee");
   await expect(page.getByLabel("Timezone", { exact: true })).toHaveValue("Asia/Tokyo");
   await expect(page.getByRole("switch", { name: "Daily email reminders" })).toBeDisabled();
-  await page.getByRole("button", { name: "Reset local data", exact: true }).click();
+  await page.getByRole("button", { name: "Reset learning data", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Keep my data", exact: true }).click();
   await expect(page.getByLabel("Display name", { exact: true })).toHaveValue("Taylor Lee");
-  await page.getByRole("button", { name: "Reset local data", exact: true }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "Reset local data", exact: true }).click();
+  await page.getByRole("button", { name: "Reset learning data", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Reset learning data", exact: true }).click();
   await expect(page.getByRole("dialog")).not.toBeVisible();
-  await expect(page.getByLabel("Display name", { exact: true })).toHaveValue("Alex Kim");
+  await expect(page.getByLabel("Display name", { exact: true })).toHaveValue("Taylor Lee");
 });
 
 test("previous preview topics now have complete lessons and attention still works", async ({ page }) => {

@@ -1,5 +1,5 @@
 import { expect, test } from "./fixtures";
-import { initialLearningState, initialLessonProgress, STORAGE_KEY, learningStateSchema } from "../lib/learning";
+import { initialLearningState, initialLessonProgress, learningStateSchema } from "../lib/learning";
 import { accountStorageKey } from "../lib/account-storage";
 
 test("hover opens both profile actions and supports moving into the dropdown", async ({ page }) => {
@@ -93,8 +93,9 @@ test("sign-out requires login again and preserves account learning data", async 
   };
   await page.addInitScript(({ key, state }) => {
     if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify(state));
-  }, { key: STORAGE_KEY, state: saved });
+  }, { key: accountStorageKey(account.id), state: saved });
   await page.goto("/library");
+  await page.getByRole("button", { name: "Upload browser progress", exact: true }).click();
   await page.getByRole("button", { name: "Open profile menu", exact: true }).hover();
   await expect(page.getByText("Taylor Lee", { exact: true })).toBeVisible();
   await page.getByRole("menuitem", { name: "Sign out", exact: true }).click();
@@ -109,16 +110,15 @@ test("sign-out requires login again and preserves account learning data", async 
   await page.getByRole("link", { name: "Login again", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Welcome back", exact: true })).toBeVisible();
   await page.goto("/settings");
-  await expect(page).toHaveURL(/\/login$/);
+  await expect(page).toHaveURL(/\/login\?next=%2Fsettings$/);
   await expect(page.getByRole("form", { name: "Your profile", exact: true })).toHaveCount(0);
   await page.getByLabel("Login ID", { exact: true }).fill(account.loginId);
   await page.getByLabel("Password", { exact: true }).fill(account.password);
   await page.getByRole("button", { name: "Log in", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "What will you learn today?", exact: true })).toBeVisible();
-  await page.goto("/settings");
+  await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
   await expect(page.getByLabel("Display name", { exact: true })).toHaveValue("Taylor Lee");
-  const resumedData = learningStateSchema.parse(await page.evaluate((key) => JSON.parse(localStorage.getItem(key)!), accountStorageKey(account.id)));
+  const resumedData = learningStateSchema.parse((await (await page.request.get("/api/v1/learning")).json()).state);
   expect(resumedData).toEqual(saved);
 });
 
@@ -135,7 +135,7 @@ test("sign-out and login synchronize between tabs", async ({ page, context, acco
     await second.getByLabel("Password", { exact: true }).fill(account.password);
     await second.getByRole("button", { name: "Log in", exact: true }).click();
     await expect(page.getByRole("heading", { name: "What will you learn today?", exact: true })).toBeVisible();
-    await expect(second.getByRole("heading", { name: "What will you learn today?", exact: true })).toBeVisible();
+    await expect(second.getByRole("heading", { name: "Your progress", exact: true })).toBeVisible();
   } finally {
     await second.close();
   }

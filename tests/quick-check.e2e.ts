@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "./fixtures";
 import { accountStorageKey } from "../lib/account-storage";
-import { initialLearningState, STORAGE_KEY } from "../lib/learning";
+import { initialLearningState } from "../lib/learning";
 
 function quickCheck(page: Page) {
   return page.locator("section").filter({ has: page.getByRole("heading", { name: "Quick check", exact: true }) });
@@ -97,7 +97,7 @@ test("Quick check preserves incorrect feedback and retry state without leaking b
   await expect(practice.getByRole("status")).toHaveText("1 of 1 correct");
 });
 
-test("Quick check and the full Quiz keep separate answers, results, and retry behavior", async ({ page, account }) => {
+test("Quick check and the full Quiz keep separate answers, results, and retry behavior", async ({ page }) => {
   await page.goto("/lesson/red-teaming");
   await steps(page).nth(4).click();
   const questions = page.locator("main fieldset");
@@ -112,11 +112,8 @@ test("Quick check and the full Quiz keep separate answers, results, and retry be
   await practice.getByRole("button", { name: "Try again", exact: true }).click();
   await expect(steps(page).nth(4)).toHaveAttribute("aria-label", /, completed$/);
 
-  const stored = await page.evaluate((key) => {
-    const raw = localStorage.getItem(key);
-    if (!raw) throw new Error("Expected persisted progress");
-    return JSON.parse(raw).progress["red-teaming"];
-  }, accountStorageKey(account.id));
+  await expect(page.getByRole("button", { name: "Complete & next", exact: true })).toBeEnabled();
+  const stored = (await (await page.request.get("/api/v1/learning")).json()).state.progress["red-teaming"];
   expect(stored).toMatchObject({
     answers: [1, 2], score: 1, completedSteps: [4],
     quickCheck: { answers: [1], score: null },
@@ -145,8 +142,9 @@ test("existing final-Quiz answers are retained without repeating the Concept que
   };
   await page.addInitScript(({ key, state }) => {
     if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify(state));
-  }, { key: STORAGE_KEY, state: previous });
+  }, { key: accountStorageKey(account.id), state: previous });
   await page.goto("/lesson/red-teaming");
+  await page.getByRole("button", { name: "Upload browser progress", exact: true }).click();
   await expect(page.locator("main fieldset")).toHaveCount(2);
   await expect(page.getByRole("status").filter({ hasText: "1 of 2 correct" })).toBeVisible();
   await expect(page.getByText("What should be established before testing a deployed system?", { exact: true })).toHaveCount(0);
@@ -154,11 +152,7 @@ test("existing final-Quiz answers are retained without repeating the Concept que
   await page.reload();
   await expect(page.getByRole("status").filter({ hasText: "1 of 2 correct" })).toBeVisible();
 
-  const stored = await page.evaluate((key) => {
-    const raw = localStorage.getItem(key);
-    if (!raw) throw new Error("Expected persisted progress");
-    return JSON.parse(raw);
-  }, accountStorageKey(account.id));
+  const stored = (await (await page.request.get("/api/v1/learning")).json()).state;
   expect(stored.progress["red-teaming"]).toMatchObject({
     answers: [1, 0], quizQuestionIds: ["red-2", "red-3"], score: 0.5,
     completedSteps: [0, 1, 2, 3], quickCheck: { answers: [0], score: 1 },

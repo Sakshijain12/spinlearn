@@ -15,7 +15,7 @@ npm run db:check
 npm run dev
 ```
 
-Open http://localhost:3000. Choose **Create account** on your first visit and enter your own login ID and password. There are no default credentials.
+Open http://localhost:3000 and learn without signing in. Create an account or log in only when you want to save or check personal progress. There are no default credentials.
 
 ## Try the interface
 
@@ -24,22 +24,25 @@ Open http://localhost:3000. Choose **Create account** on your first visit and en
 3. Open any of the **42 topics** for a complete five-step lesson, from gradient descent and CNNs to RAG, LoRA, diffusion, and alignment.
 4. Explore the interactive Intuition step, rendered Math, and copyable Code.
 5. Use **Complete & next** to confirm each reading section. Answer every Quiz question correctly, then choose **Mark as learned**. Tabs and Back only navigate; opening a section does not complete it.
-6. Open **Progress** to see your completion, streak, calendar, and quiz result.
+6. Log in and open **Progress** to see your saved completion, streak, calendar, and quiz result on any device.
 7. Update your name/timezone in **Settings** and reload to verify persistence.
 
 Every topic includes its own explanations, formulas, runnable Python example, glossary, a Concept-only Quick check, and a separate two-question final Quiz. The Concept question is not repeated in later sections or in the final Quiz. Your saved practice answer returns when you revisit Concept. All seven category pools are populated. For the widest spin pool, choose **All** and **All levels**. Your existing daily pick and re-spin limit are preserved, but you can open any lesson directly from the Library.
 
 **Sign out** ends your server session. On the signed-out screen, **Login again** opens the login-ID/password form. Correct credentials return you to Today with the same account's saved learning data.
 
-Credentials and sessions persist in Neon PostgreSQL. Learning data remains in this browser, separately for each account. Cross-device automatic learning-data sync, email delivery, password recovery, and automated content generation are not connected.
+Credentials, sessions, and signed-in learning progress persist in Neon PostgreSQL. Refresh or return to a tab to load changes from another device. Guest interactions are temporary for the current visit. Email delivery, password recovery, and automated content generation are not connected.
 
 ## Deploy or move existing data
 
 Follow [Deploy to Vercel + Neon in README](README.md#deploy-to-vercel--neon) for the exact setup.
 
 - Use the optional `db:import-sqlite` command before creating Neon accounts to retain earlier account IDs/passwords.
-- Use **Settings -> Download learning backup** locally, then **Import learning backup** on the deployed site while signed in to the same migrated account.
+- For the existing deployed site, run the updated `npm run db:migrate` and `npm run db:check` before deploying this release. Do not re-import SQLite accounts into the populated Neon database.
+- On the original browser, log in and choose **Upload browser progress** if offered. It imports only into an empty account record. A confirmed backup restore in Settings can intentionally replace existing server progress.
 - Add the secret `DATABASE_URL` to Vercel. The checked-in configuration handles installation and building.
+- Set `SITE_URL=https://spinlearn-rosy.vercel.app`. Submit `/sitemap.xml` in Google Search Console after deployment; optional HTML-tag verification uses `GOOGLE_SITE_VERIFICATION`.
+- Review the public `/privacy` and `/declaration` pages. They use Sakshi and `spinlearn025@gmail.com` as the operator/contact.
 - Keep local `.env.local`, SQLite files, and personal backup JSON out of GitHub and Vercel uploads.
 
 ## Check the application

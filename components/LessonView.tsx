@@ -18,7 +18,7 @@ export function LessonView({ topic, lesson, glossary }: {
   glossary: Record<string, string>;
 }) {
   const { slug } = lesson;
-  const { state, ready, visitStep, completeStep, prepareQuiz, saveQuiz, saveQuickCheck, completeLesson, toggleBookmark } = useLearning();
+  const { state, account, ready, saving, visitStep, completeStep, prepareQuiz, saveQuiz, saveQuickCheck, completeLesson, toggleBookmark } = useLearning();
   const progress = state.progress[slug];
   const currentStep = progress?.step ?? 0;
   const quizReady = ready && quizMatches(progress, lesson.quiz);
@@ -39,7 +39,7 @@ export function LessonView({ topic, lesson, glossary }: {
   }, [ready, currentStep]);
   useEffect(() => {
     if (ready && currentStep === 4) {
-      prepareQuiz(slug, lesson.quiz, [lesson.steps.concept.quick_check.id, ...lesson.quiz.map((question) => question.id)]);
+      void prepareQuiz(lesson);
     }
   }, [ready, currentStep, slug, lesson, prepareQuiz]);
   useEffect(() => {
@@ -58,9 +58,9 @@ export function LessonView({ topic, lesson, glossary }: {
     };
   }, [ready, lesson, slug]);
 
-  const finish = () => {
+  const finish = async () => {
     const seconds = elapsed.current + (activeSince.current !== null ? (performance.now() - activeSince.current) / 1000 : 0);
-    if (completeLesson(slug, seconds, lesson.quiz.length)) {
+    if (await completeLesson(lesson, seconds)) {
       activeSince.current = null;
       setCompleted(true);
       window.scrollTo({ top: 0, behavior: "instant" });
@@ -78,7 +78,7 @@ export function LessonView({ topic, lesson, glossary }: {
         <h1 className="mr-1 text-title font-medium tracking-tight md:text-display">{topic.name}</h1>
         <Badge variant="category" value={topic.category} /><Badge variant="level" value={topic.level} />
         <span className="inline-flex items-center gap-1.5 text-caption text-text-secondary"><Icon name="clock" size={14} />{topic.minutes} min</span>
-        <button type="button" className={`icon-button ml-auto ${saved ? "text-accent-text [&_svg]:fill-accent-bg" : ""}`} disabled={!ready} aria-label={`${saved ? "Unsave" : "Save"} ${topic.name}`} aria-pressed={saved} onClick={() => toggleBookmark(slug)}><Icon name="bookmark" size={20} /></button>
+        <button type="button" className={`icon-button ml-auto ${saved ? "text-accent-text [&_svg]:fill-accent-bg" : ""}`} disabled={!ready || saving} aria-label={`${saved ? "Unsave" : "Save"} ${topic.name}`} aria-pressed={saved} onClick={() => toggleBookmark(slug)}><Icon name="bookmark" size={20} /></button>
       </div>
     </header>
   );
@@ -91,6 +91,7 @@ export function LessonView({ topic, lesson, glossary }: {
           <p className="section-label">Lesson complete</p>
           <h1 className="text-title font-medium tracking-tight">One more idea, understood</h1>
           <p className="mt-3 text-body text-text-secondary">You&apos;ve completed {lesson.title}.</p>
+          {!account && <p className="mt-3 text-small text-text-secondary">This result is temporary for this visit. Log in to record future learning and view progress across devices.</p>}
           <div className="my-6 grid grid-cols-2 gap-3 text-left">
             <div className="metric-card"><p className="text-caption text-text-secondary">Quiz result</p><p className="mt-1 text-heading font-medium">{Math.round((progress?.score ?? 0) * 100)}%</p></div>
             <div className="metric-card"><p className="text-caption text-text-secondary">Review on</p><p className="mt-1 text-heading font-medium">{progress?.dueDate ? new Date(`${progress.dueDate}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }) : "\u2014"}</p></div>
@@ -106,21 +107,22 @@ export function LessonView({ topic, lesson, glossary }: {
     if (currentStep === 1) return <><p className="text-body leading-7 text-text-secondary">{lesson.steps.intuition.body}</p>{lesson.steps.intuition.embed === "kv_cache_stepper" && <KVCacheDemo />}{lesson.steps.intuition.embed === "attention_fan" && <AttentionDemo />}</>;
     if (currentStep === 2) return <div className="space-y-4"><p className="text-body leading-7 text-text-secondary">{lesson.steps.math.body}</p>{lesson.steps.math.formulas.map((formula) => <Formula key={formula} value={formula} />)}{slug === "kv-cache" && <p className="text-caption text-text-secondary">L: layers &middot; H: KV heads &middot; d: head size &middot; S: sequence length &middot; N: batch size &middot; b: bytes per value.</p>}<p className="text-small leading-6 text-text-secondary">{lesson.steps.math.worked_example}</p></div>;
     if (currentStep === 3) return <div className="space-y-4"><p className="text-body leading-7 text-text-secondary">{lesson.steps.code.explanation}</p><CodeBlock code={lesson.steps.code.snippet} language={lesson.steps.code.language} downloadable={slug === "kv-cache"} /></div>;
-    return <div className="space-y-4"><p className="text-small text-text-secondary">Answer every question correctly to complete Quiz. The Concept quick check is not repeated here.</p>{quizReady ? <Quiz key={`${slug}-full-${progress?.quizQuestionIds.join(",")}`} questions={lesson.quiz} initialAnswers={progress?.answers} initialScore={progress?.score} onChecked={(answers, score) => saveQuiz(slug, answers, score, lesson.quiz.length)} onRetry={() => saveQuiz(slug, [], null, lesson.quiz.length)} /> : <p className="text-small text-text-secondary">Preparing your Quiz...</p>}</div>;
+    return <div className="space-y-4"><p className="text-small text-text-secondary">Answer every question correctly to complete Quiz. The Concept quick check is not repeated here.</p>{quizReady ? <Quiz key={`${slug}-full-${progress?.quizQuestionIds.join(",")}`} questions={lesson.quiz} initialAnswers={progress?.answers} initialScore={progress?.score} disabled={saving} onChecked={(answers) => { void saveQuiz(lesson, answers); }} onRetry={() => { void saveQuiz(lesson, null); }} /> : <p className="text-small text-text-secondary">Preparing your Quiz...</p>}</div>;
   };
 
   return (
     <main id="main-content" className="page-container">
       {title}
+      {!account && <p className="mb-4 text-small text-text-secondary">You can take this lesson without an account. <Link href={`/login?next=${encodeURIComponent(`/lesson/${slug}`)}`} className="text-link">Log in to save your progress</Link>.</p>}
       <div className="mb-6">
-        <StepBar currentStep={currentStep} completedSteps={progress?.completedSteps ?? []} disabled={!ready} onStepClick={(step) => visitStep(slug, step)} />
+        <StepBar currentStep={currentStep} completedSteps={progress?.completedSteps ?? []} disabled={!ready || saving} onStepClick={(step) => { void visitStep(slug, step); }} />
         <p aria-live="polite" className="mt-2 text-caption text-text-secondary">{completedStepCount(progress)} of 5 sections complete. The outline shows your current section; a filled bar and check mean completed.</p>
         {progress?.completedAt && completedStepCount(progress) < 5 && <p className="mt-1 text-caption text-text-secondary">Your earlier lesson result is saved in Progress. Section confirmations are tracked separately.</p>}
       </div>
       <div className="grid items-start gap-4 min-[900px]:grid-cols-[1.7fr_1fr]">
         <div className="min-w-0 space-y-4">
           <section className="card"><h2 className="section-label">In one line</h2><p className="text-body-lg leading-7">{lesson.one_line}</p></section>
-          <section className="card min-w-0" aria-labelledby="step-title"><h2 id="step-title" className="section-label">{STEP_NAMES[currentStep]}</h2>{ready ? stepContent() : <p className="text-small text-text-secondary">Loading your lesson progress...</p>}</section>
+          <section className="card min-w-0" aria-labelledby="step-title"><h2 id="step-title" className="section-label">{STEP_NAMES[currentStep]}</h2>{ready || currentStep === 0 ? stepContent() : <p className="text-small text-text-secondary">Loading your lesson progress...</p>}</section>
           {currentStep === 0 && (
             <section className="card" aria-labelledby="quick-check-title">
               <h2 id="quick-check-title" className="section-label">Quick check</h2>
@@ -130,9 +132,10 @@ export function LessonView({ topic, lesson, glossary }: {
                   questions={[lesson.steps.concept.quick_check]}
                   initialAnswers={progress?.quickCheck?.answers}
                   initialScore={progress?.quickCheck?.score}
-                  onAnswersChange={(answers) => saveQuickCheck(slug, answers, null)}
-                  onChecked={(answers, score) => saveQuickCheck(slug, answers, score)}
-                  onRetry={(answers) => saveQuickCheck(slug, answers, null)}
+                  disabled={saving}
+                  onAnswersChange={(answers) => { void saveQuickCheck(lesson, answers, false); }}
+                  onChecked={(answers) => { void saveQuickCheck(lesson, answers, true); }}
+                  onRetry={(answers) => { void saveQuickCheck(lesson, answers, false); }}
                 />
               ) : <p className="text-small text-text-secondary">Restoring your Quick check...</p>}
             </section>
@@ -150,10 +153,10 @@ export function LessonView({ topic, lesson, glossary }: {
       </div>
       <div className="mt-7 border-t border-border pt-5">
         <div className="flex items-center justify-between gap-3">
-          <button type="button" className="btn-secondary" disabled={!ready || currentStep === 0} onClick={() => visitStep(slug, currentStep - 1)}><Icon name="left" size={16} /><span className="hidden sm:inline">{STEP_NAMES[Math.max(0, currentStep - 1)]}</span><span className="sm:hidden">Back</span></button>
-          {currentStep < 4 ? <button type="button" className="btn-primary" disabled={!ready} onClick={() => completeStep(slug, currentStep)}>Complete &amp; next<Icon name="right" size={16} /></button> : <button type="button" className="btn-primary" disabled={!quizReady || !canCompleteLesson(progress, lesson.quiz.length)} onClick={finish}>Mark as learned<Icon name="check" size={16} /></button>}
+          <button type="button" className="btn-secondary" disabled={!ready || saving || currentStep === 0} onClick={() => visitStep(slug, currentStep - 1)}><Icon name="left" size={16} /><span className="hidden sm:inline">{STEP_NAMES[Math.max(0, currentStep - 1)]}</span><span className="sm:hidden">Back</span></button>
+          {currentStep < 4 ? <button type="button" className="btn-primary" disabled={!ready || saving} onClick={() => completeStep(slug, currentStep)}>Complete &amp; next<Icon name="right" size={16} /></button> : <button type="button" className="btn-primary" disabled={saving || !quizReady || !canCompleteLesson(progress, lesson.quiz.length)} onClick={finish}>Mark as learned<Icon name="check" size={16} /></button>}
         </div>
-        <p className="mt-3 text-caption text-text-secondary">{currentStep === 4 ? "Complete each reading section and answer every quiz question correctly to finish." : "Complete & next confirms this section. Tabs and Back only switch sections."} Your progress is saved on this device.</p>
+        <p className="mt-3 text-caption text-text-secondary">{currentStep === 4 ? "Complete each reading section and answer every quiz question correctly to finish." : "Complete & next confirms this section. Tabs and Back only switch sections."} {account ? saving ? "Saving to your account..." : "Progress is saved to your account." : "Your progress is temporary until you log in."}</p>
       </div>
     </main>
   );

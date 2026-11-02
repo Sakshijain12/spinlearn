@@ -1,98 +1,137 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import { getTodayDate } from "@/lib/utils";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { z } from "zod";
+import { generateId, getTodayDate } from "@/lib/utils";
+import { initialLearningState, learningStats, quizMatches, type DailySpin, type LearningState, type Profile } from "@/lib/learning";
 import {
-  initialLearningState, initialLessonProgress,
-  learningStats, offsetDay, profileSchema, canCompleteLesson, quickCheckSchema, alignQuizProgress, type DailySpin, type LearningState, type Profile,
-} from "@/lib/learning";
+  applyLearningAction, learningActionSchema, learningSnapshotSchema,
+  type LearningAction, type LearningSnapshot,
+} from "@/lib/learning-actions";
 import type { LessonContent } from "@/lib/schemas/validation";
-import { authResponseSchema, type Account } from "@/lib/auth/validation";
-import { accountStorageKey, broadcastAccountChange, loadAccountLearning } from "@/lib/account-storage";
+import type { Account } from "@/lib/auth/validation";
+import { broadcastAccountChange, readPreviousBrowserLearning } from "@/lib/account-storage";
 import { validateLearningBackup } from "@/lib/learning-backup";
 
 interface LearningContextValue {
   state: LearningState;
-  account: Account;
+  account: Account | null;
   signingOut: boolean;
   ready: boolean;
+  saving: boolean;
   today: string;
   stats: ReturnType<typeof learningStats>;
-  toggleBookmark: (slug: string) => void;
-  saveProfile: (profile: Profile) => boolean;
-  saveSpin: (spin: DailySpin) => boolean;
-  visitStep: (slug: string, step: number) => void;
-  completeStep: (slug: string, step: number) => boolean;
-  prepareQuiz: (slug: string, questions: LessonContent["quiz"], legacyQuestionIds: string[]) => void;
-  saveQuiz: (slug: string, answers: number[], score: number | null, questionCount: number) => void;
-  saveQuickCheck: (slug: string, answers: number[], score: number | null) => void;
-  completeLesson: (slug: string, seconds: number, questionCount: number) => boolean;
-  reset: () => boolean;
-  importBackup: (backup: unknown) => boolean;
+  toggleBookmark: (slug: string) => Promise<boolean>;
+  saveProfile: (profile: Profile) => Promise<boolean>;
+  saveSpin: (spin: DailySpin) => Promise<boolean>;
+  visitStep: (slug: string, step: number) => Promise<boolean>;
+  completeStep: (slug: string, step: number) => Promise<boolean>;
+  prepareQuiz: (lesson: LessonContent) => Promise<boolean>;
+  saveQuiz: (lesson: LessonContent, answers: number[] | null) => Promise<boolean>;
+  saveQuickCheck: (lesson: LessonContent, answers: number[], checked: boolean) => Promise<boolean>;
+  completeLesson: (lesson: LessonContent, seconds: number) => Promise<boolean>;
+  reset: () => Promise<boolean>;
+  importBackup: (backup: unknown) => Promise<boolean>;
   signOut: () => Promise<void>;
   notify: (message: string) => void;
 }
 
 const LearningContext = createContext<LearningContextValue | null>(null);
+const failureSchema = z.object({ error: z.object({ message: z.string() }) });
 
-export function LearningProvider({ children, account }: { children: ReactNode; account: Account }) {
+export function LearningProvider({ children, account }: { children: ReactNode; account: Account | null }) {
   const [state, setState] = useState(() => {
     const initial = initialLearningState();
-    initial.profile.displayName = account.displayName;
+    initial.profile.displayName = account?.displayName ?? "Guest";
     return initial;
   });
-  const storageKey = accountStorageKey(account.id);
+  const pathname = usePathname();
   const stateRef = useRef(state);
+  const revision = useRef(0);
   const writable = useRef(false);
+  const queue = useRef<Promise<boolean>>(Promise.resolve(true));
+  const channel = useRef<BroadcastChannel | null>(null);
+  const pendingSave = useRef(false);
   const [ready, setReady] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [today, setToday] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [signingOut, setSigningOut] = useState(false);
+  const [browserProgress, setBrowserProgress] = useState<LearningState | null>(null);
 
-  useEffect(() => {
-    const load = () => {
-      try {
-        const next = loadAccountLearning(localStorage, account);
-        stateRef.current = next;
-        setState(next);
-        writable.current = true;
-        setError("");
-      } catch (cause) {
-        console.error("Spinlearn could not load local learning data.", cause);
-        writable.current = false;
-        setError("Your saved data could not be loaded. Allow browser storage and reload, or reset local data in Settings.");
-      }
+  const acceptSnapshot = useCallback((snapshot: LearningSnapshot) => {
+    if (snapshot.accountId !== account?.id) {
+      window.location.reload();
+      return;
+    }
+    if (snapshot.revision < revision.current) return;
+    revision.current = snapshot.revision;
+    stateRef.current = snapshot.state;
+    setState(snapshot.state);
+  }, [account?.id]);
+
+  const refresh = useCallback(async () => {
+    if (!account) {
+      writable.current = true;
       setReady(true);
-    };
-    load();
-    const onStorage = (event: StorageEvent) => {
-      if (event.key === storageKey || event.key === null) load();
-    };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, [account, storageKey]);
+      return;
+    }
+    try {
+      const response = await fetch("/api/v1/learning", { cache: "no-store" });
+      if (response.status === 401) {
+        writable.current = false;
+        window.location.reload();
+        return;
+      }
+      if (!response.ok) throw new Error("Your server progress could not be loaded. Try again; it has not been replaced.");
+      const snapshot = learningSnapshotSchema.parse(await response.json());
+      if (snapshot.accountId !== account.id) { window.location.reload(); return; }
+      if (snapshot.revision < revision.current) return;
+      acceptSnapshot(snapshot);
+      writable.current = true;
+      setError("");
+      if (snapshot.revision === 0) {
+        try {
+          const previous = readPreviousBrowserLearning(localStorage, account.id);
+          if (previous) {
+            setBrowserProgress(previous);
+            setReady(false);
+            return;
+          }
+        } catch (cause) {
+          console.error("Spinlearn could not read previous browser progress.", cause);
+          setNotice("Previous browser data could not be read. You can import a learning backup in Settings.");
+        }
+      }
+      setBrowserProgress(null);
+      setReady(true);
+    } catch (cause) {
+      console.error("Spinlearn could not sync learning data.", cause);
+      writable.current = false;
+      setReady(false);
+      setError(cause instanceof Error ? cause.message : "Server progress could not be loaded. Try again.");
+    }
+  }, [account, acceptSnapshot]);
 
   useEffect(() => {
-    const verifySession = async () => {
-      if (document.visibilityState !== "visible") return;
-      try {
-        const response = await fetch("/api/auth/session", { cache: "no-store" });
-        if (response.status === 401) {
-          window.location.assign("/login");
-          return;
-        }
-        if (!response.ok) throw new Error(`Session check failed (${response.status}).`);
-        const result = authResponseSchema.parse(await response.json());
-        if (result.account.id !== account.id) window.location.reload();
-      } catch (cause) {
-        console.error("Spinlearn could not verify the account session.", cause);
-        setError("Your login session could not be checked. Reload the page before continuing.");
-      }
+    void refresh();
+    if (!account) return;
+    const visible = () => { if (document.visibilityState === "visible" && !pendingSave.current) void refresh(); };
+    document.addEventListener("visibilitychange", visible);
+    if (typeof BroadcastChannel !== "undefined") {
+      const sync = new BroadcastChannel(`spinlearn-learning-${account.id}`);
+      channel.current = sync;
+      sync.onmessage = () => { void refresh(); };
+    }
+    return () => {
+      document.removeEventListener("visibilitychange", visible);
+      channel.current?.close();
+      channel.current = null;
     };
-    document.addEventListener("visibilitychange", verifySession);
-    return () => document.removeEventListener("visibilitychange", verifySession);
-  }, [account.id]);
+  }, [refresh, account]);
 
   useEffect(() => {
     if (!ready) return;
@@ -104,207 +143,122 @@ export function LearningProvider({ children, account }: { children: ReactNode; a
 
   useEffect(() => {
     if (!notice) return;
-    const timer = window.setTimeout(() => setNotice(""), 3500);
+    const timer = window.setTimeout(() => setNotice(""), 6000);
     return () => window.clearTimeout(timer);
   }, [notice]);
 
-  const commit = useCallback((update: (current: LearningState) => LearningState): boolean => {
-    if (!writable.current) {
-      setError("Local storage is unavailable. Allow browser storage or reset unreadable data in Settings before saving.");
+  const send = useCallback((action: LearningAction, lesson?: LessonContent): Promise<boolean> => {
+    const requestId = generateId();
+    const run = async () => {
+      if (!writable.current) {
+        setError("Progress is not ready to save. Retry loading it before making changes.");
+        return false;
+      }
+      setSaving(true);
+      pendingSave.current = true;
+      try {
+        const validated = learningActionSchema.parse(action);
+        if (!account) {
+          const next = applyLearningAction(stateRef.current, validated, { requestId, now: new Date(), lesson });
+          stateRef.current = next;
+          setState(next);
+        } else {
+          const response = await fetch("/api/v1/learning", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ accountId: account.id, requestId, action: validated, expectedRevision: revision.current }),
+          });
+          const data: unknown = await response.json();
+          if (!response.ok) {
+            if (response.status === 401) writable.current = false;
+            const failure = failureSchema.safeParse(data);
+            throw new Error(failure.success ? failure.data.error.message : "Your change could not be saved to the server.");
+          }
+          acceptSnapshot(learningSnapshotSchema.parse(data));
+          channel.current?.postMessage({ revision: revision.current });
+        }
+        setError("");
+        return true;
+      } catch (cause) {
+        console.error("Spinlearn could not save a learning action.", cause);
+        setError(cause instanceof Error ? cause.message : "Your change could not be saved. Try again.");
+        if (account) {
+          writable.current = false;
+          setReady(false);
+        }
+        return false;
+      } finally {
+        setSaving(false);
+        pendingSave.current = false;
+      }
+    };
+    const next = queue.current.then(run);
+    queue.current = next;
+    return next;
+  }, [account, acceptSnapshot]);
+
+  const toggleBookmark = useCallback(async (slug: string) => {
+    if (!account) {
+      window.location.assign(`/login?next=${encodeURIComponent(pathname)}`);
       return false;
     }
-    const next = update(stateRef.current);
-    if (next === stateRef.current) return true;
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(next));
-      stateRef.current = next;
-      setState(next);
-      setError("");
-      return true;
-    } catch (cause) {
-      console.error("Spinlearn could not save local learning data.", cause);
-      setError("Your changes could not be saved. Free some browser storage, then try again.");
-      return false;
-    }
-  }, [storageKey]);
-
-  const toggleBookmark = useCallback((slug: string) => {
-    const saved = stateRef.current.bookmarks.includes(slug);
-    if (commit((current) => ({
-      ...current,
-      bookmarks: saved ? current.bookmarks.filter((item) => item !== slug) : [...current.bookmarks, slug],
-    }))) setNotice(saved ? "Removed from saved topics" : "Saved for later");
-  }, [commit]);
-
-  const saveProfile = useCallback((profile: Profile) => {
-    const validated = profileSchema.safeParse(profile);
-    if (!validated.success) {
-      setError(validated.error.issues[0].message);
-      return false;
-    }
-    const saved = commit((current) => ({ ...current, profile: validated.data }));
-    if (saved) setNotice("Settings saved on this device");
-    return saved;
-  }, [commit]);
-
-  const saveSpin = useCallback((spin: DailySpin) => commit((current) => ({ ...current, spin })), [commit]);
-
+    const saved = !stateRef.current.bookmarks.includes(slug);
+    const success = await send({ type: "bookmark", slug, saved });
+    if (success) setNotice(saved ? "Saved to your account" : "Removed from saved topics");
+    return success;
+  }, [account, pathname, send]);
+  const saveProfile = useCallback(async (profile: Profile) => {
+    const success = await send({ type: "profile", profile });
+    if (success) setNotice("Profile saved to your account");
+    return success;
+  }, [send]);
+  const saveSpin = useCallback((spin: DailySpin) => send({ type: "spin", spin }), [send]);
   const visitStep = useCallback((slug: string, step: number) => {
-    commit((current) => {
-      const progress = current.progress[slug] ?? initialLessonProgress();
-      if (progress.step === step && progress.visited.includes(step)) return current;
-      return {
-        ...current,
-        progress: {
-          ...current.progress,
-          [slug]: { ...progress, step, visited: [...new Set([...progress.visited, step])] },
-        },
-      };
-    });
-  }, [commit]);
-
-  const completeStep = useCallback((slug: string, step: number) => {
-    if (!Number.isInteger(step) || step < 0 || step >= 4) {
-      setError("Confirm a reading section with Complete & next. Complete Quiz by checking all answers correctly.");
-      return false;
-    }
-    return commit((current) => {
-      const progress = current.progress[slug] ?? initialLessonProgress();
-      return {
-        ...current,
-        progress: {
-          ...current.progress,
-          [slug]: {
-            ...progress,
-            step: step + 1,
-            visited: [...new Set([...progress.visited, step, step + 1])],
-            completedSteps: [...new Set([...progress.completedSteps, step])],
-          },
-        },
-      };
-    });
-  }, [commit]);
-
-  const prepareQuiz = useCallback((slug: string, questions: LessonContent["quiz"], legacyQuestionIds: string[]) => {
-    const previous = stateRef.current.progress[slug] ?? initialLessonProgress();
-    const aligned = alignQuizProgress(previous, questions, legacyQuestionIds);
-    if (aligned === previous) return;
-    const saved = commit((current) => ({
-      ...current, progress: { ...current.progress, [slug]: aligned },
-    }));
-    if (saved && previous.answers.length) {
-      setNotice(aligned.answers.length
-        ? "Quiz updated: matching answers kept and scored for the remaining questions. Earlier results are preserved."
-        : "Quiz questions changed. Start a new attempt; earlier results are preserved.");
-    }
-  }, [commit]);
-
-  const saveQuiz = useCallback((slug: string, answers: number[], score: number | null, questionCount: number) => {
-    if (
-      !Number.isInteger(questionCount) || questionCount < 1
-      || (score === null ? answers.length !== 0 : (
-        !Number.isFinite(score) || score < 0 || score > 1
-        || answers.length !== questionCount
-        || answers.some((answer) => !Number.isInteger(answer) || answer < 0 || answer > 3)
-      ))
-    ) {
-      setError("Your quiz result could not be saved. Answer every question and check the answers again.");
-      return;
-    }
-    commit((current) => {
-      const progress = current.progress[slug] ?? initialLessonProgress();
-      const readingSteps = progress.completedSteps.filter((step) => step !== 4);
-      return {
-        ...current,
-        progress: {
-          ...current.progress,
-          [slug]: { ...progress, answers, score, completedSteps: score === 1 ? [...readingSteps, 4] : readingSteps },
-        },
-      };
-    });
-  }, [commit]);
-
-  const saveQuickCheck = useCallback((slug: string, answers: number[], score: number | null) => {
-    const validated = quickCheckSchema.safeParse({ answers, score });
-    if (!validated.success) {
-      setError("Your Quick check could not be saved. Select an answer and try again.");
-      return;
-    }
-    commit((current) => ({
-      ...current,
-      progress: {
-        ...current.progress,
-        [slug]: { ...(current.progress[slug] ?? initialLessonProgress()), quickCheck: validated.data },
-      },
-    }));
-  }, [commit]);
-
-  const completeLesson = useCallback((slug: string, seconds: number, questionCount: number) => {
     const progress = stateRef.current.progress[slug];
-    if (!progress || progress.score === null || !canCompleteLesson(progress, questionCount)) {
-      setError("Complete each reading section and answer every quiz question correctly before finishing the lesson.");
-      return false;
-    }
-    const date = getTodayDate(stateRef.current.profile.timezone);
-    const score = progress.score;
-    const saved = commit((current) => ({
-      ...current,
-      progress: {
-        ...current.progress,
-        [slug]: {
-          ...progress,
-          completedAt: new Date().toISOString(),
-          dueDate: offsetDay(date, score >= 0.8 ? 7 : score >= 0.5 ? 3 : 1),
-        },
-      },
-      activity: [...current.activity, {
-        slug, date, correct: Math.round(score * progress.answers.length),
-        total: progress.answers.length, seconds: Math.min(1800, Math.max(0, seconds)),
-      }],
-    }));
-    if (saved) setNotice("Lesson added to your progress");
-    return saved;
-  }, [commit]);
-
-  const reset = useCallback(() => {
+    if (progress?.step === step && progress.visited.includes(step)) return Promise.resolve(true);
+    return send({ type: "visit", slug, step });
+  }, [send]);
+  const completeStep = useCallback((slug: string, step: number) => send({ type: "complete-step", slug, step }), [send]);
+  const prepareQuiz = useCallback((lesson: LessonContent) => {
+    const progress = stateRef.current.progress[lesson.slug];
+    if (quizMatches(progress, lesson.quiz) && (progress?.score === null || progress?.quizAttemptId)) return Promise.resolve(true);
+    return send({ type: "prepare-quiz", slug: lesson.slug }, lesson);
+  }, [send]);
+  const saveQuiz = useCallback((lesson: LessonContent, answers: number[] | null) => send({ type: "quiz", slug: lesson.slug, answers }, lesson), [send]);
+  const saveQuickCheck = useCallback((lesson: LessonContent, answers: number[], checked: boolean) =>
+    send({ type: "quick-check", slug: lesson.slug, answers, checked }, lesson), [send]);
+  const completeLesson = useCallback((lesson: LessonContent, seconds: number) =>
+    send({ type: "complete-lesson", slug: lesson.slug, seconds: Math.min(1800, Math.max(0, seconds)) }, lesson), [send]);
+  const reset = useCallback(() => send({ type: "reset" }), [send]);
+  const importBackup = useCallback(async (backup: unknown) => {
     try {
-      const next = initialLearningState();
-      next.profile.displayName = account.displayName;
-      localStorage.setItem(storageKey, JSON.stringify(next));
-      stateRef.current = next;
-      setState(next);
-      writable.current = true;
-      setError("");
-      setNotice("Local learning data cleared");
-      return true;
-    } catch (cause) {
-      console.error("Spinlearn could not clear local learning data.", cause);
-      setError("Local data could not be cleared. Check your browser storage permissions and try again.");
-      return false;
-    }
-  }, [account.displayName, storageKey]);
-
-  const importBackup = useCallback((backup: unknown) => {
-    let restored: LearningState;
-    try {
-      restored = validateLearningBackup(backup, account.id).state;
+      if (!account) throw new Error("Log in before importing account progress.");
+      const validated = validateLearningBackup(backup, account.id);
+      const success = await send({ type: "restore", state: validated.state });
+      if (success) setNotice("Learning backup restored to your account");
+      return success;
     } catch (cause) {
       console.error("Spinlearn could not validate the learning backup.", cause);
-      setError(cause instanceof Error ? cause.message : "The learning backup could not be validated.");
+      setError(cause instanceof Error ? cause.message : "The backup could not be validated.");
       return false;
     }
-    const saved = commit(() => ({ ...restored, previewEnded: false }));
-    if (saved) setNotice("Learning backup restored for this account");
-    return saved;
-  }, [account.id, commit]);
+  }, [account, send]);
 
+  const chooseBrowserMigration = async (upload: boolean) => {
+    const action: LearningAction = upload && browserProgress
+      ? { type: "import-browser", state: browserProgress } : { type: "skip-browser-import" };
+    if (await send(action)) {
+      setBrowserProgress(null);
+      setReady(true);
+      setNotice(upload ? "Previous browser progress saved to your account" : "Using server progress. Your old browser data is unchanged.");
+    }
+  };
   const signOut = useCallback(async () => {
     if (signingOut) return;
     setSigningOut(true);
-    setError("");
     try {
+      await queue.current;
       const response = await fetch("/api/auth/logout", { method: "POST" });
-      if (!response.ok) throw new Error(`Sign-out failed (${response.status}).`);
+      if (!response.ok) throw new Error("Sign out could not be completed. Try again.");
       broadcastAccountChange("logout");
       window.location.assign("/signed-out");
     } catch (cause) {
@@ -316,14 +270,17 @@ export function LearningProvider({ children, account }: { children: ReactNode; a
 
   return (
     <LearningContext.Provider value={{
-      state, account, ready, today, signingOut, stats: learningStats(state, today), toggleBookmark,
-      saveProfile, saveSpin, visitStep, completeStep, prepareQuiz, saveQuiz, saveQuickCheck, completeLesson, reset, importBackup, signOut, notify: setNotice,
+      state, account, ready, saving, today, signingOut, stats: learningStats(state, today), toggleBookmark,
+      saveProfile, saveSpin, visitStep, completeStep, prepareQuiz, saveQuiz, saveQuickCheck,
+      completeLesson, reset, importBackup, signOut, notify: setNotice,
     }}>
-      {error && <div role="alert" className="border-b border-danger-text/20 bg-danger-bg px-5 py-3 text-small text-danger-text">{error}</div>}
+      {error && <div role="alert" className="border-b border-danger-text/20 bg-danger-bg px-5 py-3 text-small text-danger-text">{error} <button type="button" className="ml-2 underline" disabled={saving} onClick={() => { void refresh(); }}>Retry sync</button> <Link href="/login" className="ml-2 underline">Log in</Link></div>}
+      {browserProgress && <section aria-label="Previous browser progress" className="border-b border-border bg-accent-bg px-5 py-4 text-small text-accent-text">
+        <p>Previous learning data was found in this browser. Upload it to your account so you can access it on other devices?</p>
+        <div className="mt-3 flex flex-wrap gap-3"><button type="button" disabled={saving} className="btn-primary" onClick={() => { void chooseBrowserMigration(true); }}>Upload browser progress</button><button type="button" disabled={saving} className="btn-secondary" onClick={() => { void chooseBrowserMigration(false); }}>Start with server progress</button></div>
+      </section>}
       {children}
-      <div role="status" aria-live="polite" aria-atomic="true" className={notice ? "fixed bottom-24 left-1/2 z-50 w-max max-w-[calc(100%-32px)] -translate-x-1/2 rounded-default border border-border bg-surface-2 px-5 py-3 text-small text-text-primary md:bottom-8" : "sr-only"}>
-        {notice}
-      </div>
+      <div role="status" aria-live="polite" aria-atomic="true" className={notice ? "fixed bottom-24 left-1/2 z-50 w-max max-w-[calc(100%-32px)] -translate-x-1/2 rounded-default border border-border bg-surface-2 px-5 py-3 text-small text-text-primary md:bottom-8" : "sr-only"}>{notice}</div>
     </LearningContext.Provider>
   );
 }

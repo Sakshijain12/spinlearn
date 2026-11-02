@@ -17,8 +17,7 @@ export function generateId(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-export function getTodayDate(timezone: string): string {
-  const now = new Date();
+export function getTodayDate(timezone: string, now = new Date()): string {
   const formatter = new Intl.DateTimeFormat("en-CA", {
     timeZone: timezone,
     year: "numeric",

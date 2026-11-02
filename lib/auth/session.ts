@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { NextResponse } from "next/server";
 import { getAuthStore } from "./store";
+import { safeReturnPath } from "../site";
 
 export const SESSION_COOKIE = "spinlearn_session";
 
@@ -10,9 +11,9 @@ export async function currentAccount() {
   return token ? getAuthStore().accountForSession(token) : null;
 }
 
-export async function requireAccount() {
+export async function requireAccount(returnTo = "/") {
   const account = await currentAccount();
-  if (!account) redirect("/login");
+  if (!account) redirect(`/login?next=${encodeURIComponent(safeReturnPath(returnTo))}`);
   return account;
 }
 

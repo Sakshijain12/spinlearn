@@ -27,6 +27,16 @@ export function loadAccountLearning(storage: Storage, account: Account): Learnin
   return next;
 }
 
+export function readPreviousBrowserLearning(storage: Storage, accountId: string): LearningState | null {
+  const saved = storage.getItem(accountStorageKey(accountId));
+  const legacy = storage.getItem(LEGACY_OWNER_KEY) === accountId ? storage.getItem(STORAGE_KEY) : null;
+  const raw = saved ?? legacy;
+  if (!raw) return null;
+  const state = learningStateSchema.parse(JSON.parse(raw));
+  return state.bookmarks.length || state.activity.length || Object.keys(state.progress).length || state.spin
+    ? state : null;
+}
+
 export function broadcastAccountChange(action: "login" | "logout") {
   try {
     localStorage.setItem(AUTH_EVENT_KEY, JSON.stringify({ action, timestamp: Date.now() }));

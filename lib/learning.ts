@@ -37,6 +37,8 @@ const progressSchema = z.object({
   answers: z.array(z.number().int().min(0).max(3)),
   quizQuestionIds: z.array(z.string()).default([]),
   score: z.number().min(0).max(1).nullable(),
+  quizAttemptId: z.string().uuid().nullable().default(null),
+  completedAttemptId: z.string().uuid().nullable().default(null),
   quickCheck: quickCheckSchema.default({ answers: [], score: null }),
   completedAt: z.string().datetime().nullable(),
   dueDate: daySchema.nullable(),
@@ -83,6 +85,7 @@ export function initialLearningState(): LearningState {
 export function initialLessonProgress(): LessonProgress {
   return {
     step: 0, visited: [], completedSteps: [], answers: [], quizQuestionIds: [], score: null,
+    quizAttemptId: null, completedAttemptId: null,
     quickCheck: { answers: [], score: null }, completedAt: null, dueDate: null,
   };
 }

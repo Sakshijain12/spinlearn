@@ -1,8 +1,12 @@
 import { redirect } from "next/navigation";
 import { AuthForm } from "@/components/AuthForm";
 import { currentAccount } from "@/lib/auth/session";
+import { PRIVATE_ROBOTS, safeReturnPath } from "@/lib/site";
 
-export default async function RegisterPage() {
-  if (await currentAccount()) redirect("/");
-  return <AuthForm mode="register" />;
+export const metadata = { title: "Create an account", robots: PRIVATE_ROBOTS };
+
+export default async function RegisterPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
+  const returnTo = safeReturnPath((await searchParams).next);
+  if (await currentAccount()) redirect(returnTo);
+  return <AuthForm mode="register" returnTo={returnTo} />;
 }

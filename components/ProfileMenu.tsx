@@ -5,9 +5,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Icon } from "./Icon";
 import { useLearning } from "./LearningProvider";
+import type { Account } from "@/lib/auth/validation";
 
-export function ProfileMenu() {
-  const { state, ready, account, signOut, signingOut } = useLearning();
+export function ProfileMenu({ account }: { account: Account }) {
+  const { state, ready, signOut, signingOut } = useLearning();
   const pathname = usePathname();
   const menuId = useId();
   const [mode, setMode] = useState<"closed" | "hover" | "open">("closed");

@@ -1,10 +1,9 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { neon } from "@neondatabase/serverless";
 import { accountSchema, type Account } from "./validation";
-import { databaseUrl } from "./config";
+import { getDatabaseQuery, type DatabaseQuery } from "../db/query";
 
 export const SESSION_SECONDS = 7 * 24 * 60 * 60;
-export type AuthQuery = (text: string, values?: unknown[]) => Promise<Record<string, unknown>[]>;
+export type AuthQuery = DatabaseQuery;
 
 export function newSession() {
   const token = randomBytes(32).toString("base64url");
@@ -106,9 +105,7 @@ let store: AuthStore | undefined;
 
 export function getAuthStore(): AuthStore {
   if (!store) {
-    const sql = neon(databaseUrl(), { fetchOptions: { cache: "no-store" } });
-    store = new AuthStore(async (text, values = []) =>
-      sql.query(text, values, { fetchOptions: { signal: AbortSignal.timeout(15000) } }));
+    store = new AuthStore(getDatabaseQuery());
   }
   return store;
 }

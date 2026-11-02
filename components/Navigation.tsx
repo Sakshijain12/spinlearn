@@ -14,7 +14,7 @@ const links = [
 
 export function Navigation() {
   const pathname = usePathname();
-  const { stats } = useLearning();
+  const { stats, account } = useLearning();
   const active = (href: string) => href === "/" ? pathname === "/" || pathname.startsWith("/lesson/") : pathname === href;
   return (
     <>
@@ -33,11 +33,11 @@ export function Navigation() {
             ))}
           </nav>
           <div className="flex items-center justify-end gap-3">
-            <Link href="/progress" className="badge bg-warning-bg text-warning-text" aria-label={`${stats.streak}-day streak. View progress.`}>
+            {account && <Link href="/progress" className="badge bg-warning-bg text-warning-text" aria-label={`${stats.streak}-day streak. View progress.`}>
               <Icon name="flame" size={16} />
               <span>{stats.streak}<span className="hidden lg:inline">-day streak</span></span>
-            </Link>
-            <ProfileMenu />
+            </Link>}
+            {account ? <ProfileMenu account={account} /> : <Link href="/login" className="btn-secondary">Log in</Link>}
           </div>
         </div>
       </header>
