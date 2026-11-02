@@ -1,7 +1,6 @@
-import LibraryView from "@/components/LibraryView";
-import { publicMetadata } from "@/lib/site";
+"use client";
 
-export const metadata = publicMetadata("AI learning library", "Explore 42 free AI lessons covering machine learning, transformers, generative AI, training, deployment, and alignment.", "/library");
+import LibraryView from "@/components/LibraryView";
 
 export default function LibraryPage() {
   return <LibraryView />;
